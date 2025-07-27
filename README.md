@@ -13,7 +13,7 @@ A player tracking system for ACE servers that monitors online player positions a
 1. **Prerequisites**
    - ACE server installation
    - .NET 8.0 runtime
-   - DerethMaps (for map visualization)
+   - [DerethMaps](https://github.com/ACEmulator/DerethMaps) (for map visualization)
 
 2. **Installation Steps**
    - Download the latest release zip file from the releases page
