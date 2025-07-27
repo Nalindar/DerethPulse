@@ -8,8 +8,6 @@ A player tracking system for ACE servers that monitors online player positions a
 - **Map Integration**: Exports player data to DerethMaps for visualization
 - **Configurable**: Customizable update intervals, output paths, and logging
 
-![Demo](https://i.imgur.com/o8Q0q6k.gif)
-
 ## Installation
 
 1. **Prerequisites**
