@@ -11,16 +11,16 @@ A player tracking system for ACE servers that monitors online player positions a
 ## Installation
 
 1. **Prerequisites**
-   - ACE server installation
+   - [ACEmulator](https://github.com/ACEmulator/ACE) server installation
    - .NET 8.0 runtime
-   - [DerethMaps](https://github.com/ACEmulator/DerethMaps) (for map visualization)
+   - [DerethMaps](https://github.com/Thwargle/DerethMaps) (for map visualization)
 
 2. **Installation Steps**
    - Download the latest release zip file from the releases page
-   - Extract the zip file to your ACE server's `Mods` directory
+   - Extract the zip file to your ACEmulator server's `Mods` directory
    - Ensure the extracted folder is named `DerethPulse`
-   - Ensure the plugin is enabled in your ACE server configuration
-   - Restart your ACE server
+   - Ensure the plugin is enabled in your ACEmulator server configuration
+   - Restart your ACEmulator server
 
 
 
@@ -48,7 +48,7 @@ Edit `Settings.json` to customize the plugin behavior:
 
 ### Path Configuration
 
-**Relative Path** (relative to ACE server directory):
+**Relative Path** (relative to ACEmulator server directory):
 ```json
 "outputPath": "DerethMaps-master"
 ```
@@ -115,7 +115,7 @@ The plugin generates a JSON file with player data:
 
 ## Dependencies
 
-- ACE Server (with mod support)
+- [ACEmulator](https://github.com/ACEmulator/ACE) Server (with mod support)
 - .NET 8.0 Runtime
 - ACE.Shared library
 - Lib.Harmony (for patching)
