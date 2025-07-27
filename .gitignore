@@ -1,0 +1,29 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.cache
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Runtime files
+*.dll
+*.pdb
+*.exe
+
+# Test outputs
+test_output.json 

@@ -1,0 +1,7 @@
+{
+  "updateIntervalSeconds": 10,
+  "maxPlayersToTrack": 100,
+  "outputFileName": "dynamicPlayers.json",
+  "outputPath": "DerethMaps-master",
+  "enableLogging": false
+} 
