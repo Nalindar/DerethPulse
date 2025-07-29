@@ -2,6 +2,11 @@
   "updateIntervalSeconds": 10,
   "maxPlayersToTrack": 100,
   "outputFileName": "dynamicPlayers.json",
-  "outputPath": "DerethMaps-master",
-  "enableLogging": false
+  "playerOutputPath": "DerethMaps-master",
+  "landblockOutputPath": "DerethMaps-master",
+  "enableLogging": true,
+  "enablePlayerTracking": true,
+  "enableLandblockTracking": true,
+  "landblockUpdateIntervalSeconds": 30,
+  "landblockOutputFileName": "dynamicLandblocks.json"
 } 

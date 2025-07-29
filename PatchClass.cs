@@ -3,8 +3,10 @@ namespace DerethPulse;
 [HarmonyPatch]
 public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : BasicPatch<Settings>(mod, settingsName)
 {
-    private Timer? radarTimer;
-    private string jsonFilePath = string.Empty;
+    private Timer? playerTimer;
+    private Timer? landblockTimer;
+    private string playerJsonFilePath = string.Empty;
+    private string landblockJsonFilePath = string.Empty;
 
     public override Task OnStartSuccess()
     {
@@ -18,17 +20,31 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             }
 
             if (Settings.EnableLogging)
-                ModManager.Log("DerethPulse: Initializing player tracking system...");
+                ModManager.Log("DerethPulse: Initializing tracking systems...");
             
-            // Set up JSON file path
-            jsonFilePath = GetJsonFilePath();
+            // Set up JSON file paths
+            playerJsonFilePath = GetPlayerJsonFilePath();
+            landblockJsonFilePath = GetLandblockJsonFilePath();
             
-            // Start radar timer - update based on configuration
-            var interval = TimeSpan.FromSeconds(Settings.UpdateIntervalSeconds);
-            radarTimer = new Timer(UpdateRadarData, null, TimeSpan.Zero, interval);
+            // Start player timer if enabled
+            if (Settings.EnablePlayerTracking)
+            {
+                var interval = TimeSpan.FromSeconds(Settings.UpdateIntervalSeconds);
+                playerTimer = new Timer(UpdatePlayerData, null, TimeSpan.Zero, interval);
+                
+                if (Settings.EnableLogging)
+                    ModManager.Log($"DerethPulse: Player tracking system online and scanning every {Settings.UpdateIntervalSeconds} seconds");
+            }
             
-            if (Settings.EnableLogging)
-                ModManager.Log($"DerethPulse: Player tracking system online and scanning every {Settings.UpdateIntervalSeconds} seconds");
+            // Start landblock timer if enabled
+            if (Settings.EnableLandblockTracking)
+            {
+                var landblockInterval = TimeSpan.FromSeconds(Settings.LandblockUpdateIntervalSeconds);
+                landblockTimer = new Timer(UpdateLandblockData, null, TimeSpan.Zero, landblockInterval);
+                
+                if (Settings.EnableLogging)
+                    ModManager.Log($"DerethPulse: Landblock tracking system online and scanning every {Settings.LandblockUpdateIntervalSeconds} seconds");
+            }
         }
         catch (Exception ex)
         {
@@ -40,17 +56,20 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
 
     public override void Stop()
     {
-        base.Stop();
+        // Dispose timers to stop new callbacks
+        playerTimer?.Dispose();
+        landblockTimer?.Dispose();
         
-        radarTimer?.Dispose();
         if (Settings?.EnableLogging == true)
-            ModManager.Log("DerethPulse: Player tracking system stopped");
+            ModManager.Log("DerethPulse: Player and landblock tracking systems stopped");
+        
+        base.Stop();
     }
 
-    private string GetJsonFilePath()
+    private string GetPlayerJsonFilePath()
     {
         // Use the configured output path from settings
-        var outputPath = Settings?.OutputPath ?? "DerethMaps-master";
+        var outputPath = Settings?.PlayerOutputPath ?? "DerethMaps-master";
         var outputFileName = Settings?.OutputFileName ?? "dynamicPlayers.json";
         
         // Determine if the path is absolute or relative
@@ -67,19 +86,65 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             fullPath = Path.Combine(aceServerDir, outputPath, outputFileName);
         }
         
-        // Check if directory exists
+        if (Settings?.EnableLogging == true)
+        {
+            ModManager.Log($"DerethPulse: Player output path: {outputPath}");
+        }
+        
+        // Check if directory exists and log warning if it doesn't
         var directory = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
-            ModManager.Log($"DerethPulse: ERROR - Output directory does not exist: {directory}");
-            ModManager.Log($"DerethPulse: Please update your Settings.json to use an existing path");
-            return string.Empty; // Return empty string to indicate error
+            if (Settings?.EnableLogging == true)
+            {
+                ModManager.Log($"DerethPulse: WARNING - Player output directory does not exist: {directory}");
+                ModManager.Log($"DerethPulse: Player files may not be written. Please ensure the directory exists.");
+            }
         }
         
         return fullPath;
     }
 
-    private void UpdateRadarData(object? state)
+    private string GetLandblockJsonFilePath()
+    {
+        // Use the configured output path from settings
+        var outputPath = Settings?.LandblockOutputPath ?? "DerethMaps-master";
+        var outputFileName = Settings?.LandblockOutputFileName ?? "dynamicLandblocks.json";
+        
+        // Determine if the path is absolute or relative
+        string fullPath;
+        if (Path.IsPathRooted(outputPath))
+        {
+            // Absolute path - use as-is
+            fullPath = Path.Combine(outputPath, outputFileName);
+        }
+        else
+        {
+            // Relative path - make it relative to ACE server directory
+            var aceServerDir = Directory.GetCurrentDirectory();
+            fullPath = Path.Combine(aceServerDir, outputPath, outputFileName);
+        }
+        
+        if (Settings?.EnableLogging == true)
+        {
+            ModManager.Log($"DerethPulse: Landblock output path: {outputPath}");
+        }
+        
+        // Check if directory exists and log warning if it doesn't
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            if (Settings?.EnableLogging == true)
+            {
+                ModManager.Log($"DerethPulse: WARNING - Landblock output directory does not exist: {directory}");
+                ModManager.Log($"DerethPulse: Landblock files may not be written. Please ensure the directory exists.");
+            }
+        }
+        
+        return fullPath;
+    }
+
+    private void UpdatePlayerData(object? state)
     {
         try
         {
@@ -90,9 +155,6 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             }
 
             var players = PlayerManager.GetAllOnline();
-            if (Settings.EnableLogging)
-                ModManager.Log($"DerethPulse: Player scan detected {players.Count} active targets");
-
             var playerData = new List<PlayerRadarData>();
             var playerCount = 0;
 
@@ -105,20 +167,57 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                     break;
                 }
 
-                var radarData = ExtractPlayerData(player);
-                if (radarData != null)
+                var playerRadarData = ExtractPlayerData(player);
+                if (playerRadarData != null)
                 {
-                    playerData.Add(radarData);
+                    playerData.Add(playerRadarData);
                     playerCount++;
                 }
             }
 
-            ExportToJson(playerData);
+            if (Settings.EnableLogging)
+                ModManager.Log($"DerethPulse: Player scan detected {players.Count} active targets. Attempting to write {playerData.Count} players to: {playerJsonFilePath}");
+
+            ExportPlayerDataToJson(playerData);
         }
         catch (Exception ex)
         {
             if (Settings?.EnableLogging == true)
                 ModManager.Log($"DerethPulse: Error during player scan - {ex.Message}");
+        }
+    }
+
+    private void UpdateLandblockData(object? state)
+    {
+        try
+        {
+            if (Settings == null)
+            {
+                ModManager.Log("DerethPulse: ERROR - Settings not available for landblock tracking update");
+                return;
+            }
+
+            var landblocks = LandblockManager.GetLoadedLandblocks();
+            var landblockData = new List<LandblockRadarData>();
+
+            foreach (var landblock in landblocks)
+            {
+                var landblockRadarData = ExtractLandblockData(landblock);
+                if (landblockRadarData != null)
+                {
+                    landblockData.Add(landblockRadarData);
+                }
+            }
+
+            if (Settings.EnableLogging)
+                ModManager.Log($"DerethPulse: Landblock scan detected {landblocks.Count} loaded landblocks. Attempting to write {landblockData.Count} landblocks to: {landblockJsonFilePath}");
+
+            ExportLandblockDataToJson(landblockData);
+        }
+        catch (Exception ex)
+        {
+            if (Settings?.EnableLogging == true)
+                ModManager.Log($"DerethPulse: Error during landblock scan - {ex.Message}");
         }
     }
 
@@ -182,31 +281,88 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         }
     }
 
-    private void ExportToJson(List<PlayerRadarData> playerData)
+    private LandblockRadarData? ExtractLandblockData(Landblock landblock)
     {
         try
         {
-            // Check if we have a valid file path
-            if (string.IsNullOrEmpty(jsonFilePath))
-            {
-                ModManager.Log("DerethPulse: ERROR - Cannot export data: Invalid output path configured");
-                return;
-            }
+            // Get landblock status
+            string status;
+            if (landblock.IsDormant)
+                status = "Dormant";
+            else if (landblock.Permaload)
+                status = "Permaload";
+            else
+                status = "Active";
 
+            // Convert landblock coordinates to map coordinates
+            // Landblock coordinates are 0-255 for X and Y
+            var lbX = landblock.Id.LandblockX;
+            var lbY = landblock.Id.LandblockY;
+
+            // Convert to map coordinates (similar to coordsFromLandblock function in derethMaps.js)
+            var xfract = lbX / 256.0;
+            var yfract = (lbY + 1) / 256.0;
+            var mapX = -101.9 + (102 - (-101.9)) * xfract;
+            var mapY = -102 + (101.9 - (-102)) * (1 - yfract);
+
+            // Format coordinates as hex strings (like in the existing dynamicLandblocks.json)
+            var x = lbX.ToString("x2");
+            var y = lbY.ToString("x2");
+
+            return new LandblockRadarData
+            {
+                Type = "Landblock",
+                Status = status,
+                X = x,
+                Y = y
+            };
+        }
+        catch (Exception ex)
+        {
+            if (Settings?.EnableLogging == true)
+                ModManager.Log($"DerethPulse: Error extracting data for landblock {landblock.Id.Raw:X8} - {ex.Message}");
+            return null;
+        }
+    }
+
+    private void ExportPlayerDataToJson(List<PlayerRadarData> playerData)
+    {
+        try
+        {
             var jsonString = JsonSerializer.Serialize(playerData, new JsonSerializerOptions
             {
                 WriteIndented = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
 
-            File.WriteAllText(jsonFilePath, jsonString);
-            if (Settings?.EnableLogging == true)
-                ModManager.Log($"DerethPulse: Exported {playerData.Count} player positions to DerethMaps at: {jsonFilePath}");
+            File.WriteAllText(playerJsonFilePath, jsonString);
         }
         catch (Exception ex)
         {
             if (Settings?.EnableLogging == true)
+            {
                 ModManager.Log($"DerethPulse: Error exporting player data - {ex.Message}");
+                ModManager.Log($"DerethPulse: File path was: {playerJsonFilePath}");
+            }
+        }
+    }
+
+    private void ExportLandblockDataToJson(List<LandblockRadarData> landblockData)
+    {
+        try
+        {
+            var jsonString = JsonSerializer.Serialize(landblockData, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            File.WriteAllText(landblockJsonFilePath, jsonString);
+        }
+        catch (Exception ex)
+        {
+            if (Settings?.EnableLogging == true)
+                ModManager.Log($"DerethPulse: Error exporting landblock data - {ex.Message}");
         }
     }
 }
@@ -232,6 +388,21 @@ public class PlayerRadarData
     public string Y { get; set; } = "";
 }
 
+public class LandblockRadarData
+{
+    [JsonPropertyName("Type")]
+    public string Type { get; set; } = "Landblock";
+
+    [JsonPropertyName("Status")]
+    public string Status { get; set; } = "";
+
+    [JsonPropertyName("x")]
+    public string X { get; set; } = "";
+
+    [JsonPropertyName("y")]
+    public string Y { get; set; } = "";
+}
+
 public class Settings
 {
     [JsonPropertyName("updateIntervalSeconds")]
@@ -243,11 +414,24 @@ public class Settings
     [JsonPropertyName("enableLogging")]
     public bool EnableLogging { get; set; } = false;
 
-
-
     [JsonPropertyName("maxPlayersToTrack")]
     public int MaxPlayersToTrack { get; set; } = 100;
 
-    [JsonPropertyName("outputPath")]
-    public string OutputPath { get; set; } = "DerethMaps-master";
+    [JsonPropertyName("enableLandblockTracking")]
+    public bool EnableLandblockTracking { get; set; } = true;
+
+    [JsonPropertyName("landblockUpdateIntervalSeconds")]
+    public int LandblockUpdateIntervalSeconds { get; set; } = 30;
+
+    [JsonPropertyName("landblockOutputFileName")]
+    public string LandblockOutputFileName { get; set; } = "dynamicLandblocks.json";
+
+    [JsonPropertyName("playerOutputPath")]
+    public string PlayerOutputPath { get; set; } = "DerethMaps-master";
+
+    [JsonPropertyName("landblockOutputPath")]
+    public string LandblockOutputPath { get; set; } = "DerethMaps-master";
+
+    [JsonPropertyName("enablePlayerTracking")]
+    public bool EnablePlayerTracking { get; set; } = true;
 } 
