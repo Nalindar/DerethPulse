@@ -325,7 +325,7 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
 
             File.WriteAllText(jsonFilePath, jsonString);
             if (Settings?.EnableLogging == true)
-                Mod.Log($"Exported {data.Count} {type}{(data.Count > 1 || data.Count == 0 ? "s" : "")} activity data to {jsonFilePath}");
+                Mod.Log($"Exported activity data for {data.Count} {type}{(data.Count > 1 || data.Count == 0 ? "s" : "")} to {jsonFilePath}");
         }
         catch (Exception ex)
         {
