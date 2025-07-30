@@ -1,8 +1,8 @@
 {
   "Name": "DerethPulse",
-  "Author": "Hells",
-  "Description": "A player tracking system that monitors online player positions and exports them to DerethMaps for real-time map visualization.",
-  "Version": "1.0.0",
+  "Author": "Hells, Ripley",
+  "Description": "A game world tracking system that monitors online player activity and exports it as json data for real-time map visualization.",
+  "Version": "2.0.0",
   "Enabled": true,
   "HotReload": true,
   "RegisterCommands": false,

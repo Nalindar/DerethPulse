@@ -3,56 +3,94 @@ namespace DerethPulse;
 [HarmonyPatch]
 public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : BasicPatch<Settings>(mod, settingsName)
 {
-    private Timer? radarTimer;
-    private string jsonFilePath = string.Empty;
+    private Timer? playerDataTimer;
+    private Timer? landblockDataTimer;
 
-    public override Task OnStartSuccess()
+    private static readonly JsonSerializerOptions jsonSerializerOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    public override void Init()
+    {
+        base.Init();
+    }
+
+    //public override Task OnStartSuccess()
+    //{
+    //    Settings = SettingsContainer?.Settings ?? new();
+    //    StartServices();
+
+    //    return Task.CompletedTask;
+    //}
+
+    public override Task OnWorldOpen()
+    {
+        Settings = SettingsContainer?.Settings ?? new();
+        StartServices();
+
+        return Task.CompletedTask;
+    }
+
+    private void StartServices()
     {
         try
         {
-            // Ensure settings are loaded
-            if (Settings == null)
+            if (Settings.EnablePlayerDataOutput)
             {
-                ModManager.Log("DerethPulse: ERROR - Settings not loaded, using defaults");
-                return Task.CompletedTask;
+                Mod.Log("Initializing player tracking system...");
+
+                var interval = TimeSpan.FromSeconds(Settings.PlayerDataUpdateIntervalSeconds);
+                playerDataTimer = new Timer(UpdatePlayerData, null, TimeSpan.Zero, interval);
+
+                Mod.Log($"Player activity tracking system online and scanning every {interval.TotalSeconds} seconds");
+            }
+            else
+            {
+                playerDataTimer = null;
             }
 
-            if (Settings.EnableLogging)
-                ModManager.Log("DerethPulse: Initializing player tracking system...");
-            
-            // Set up JSON file path
-            jsonFilePath = GetJsonFilePath();
-            
-            // Start radar timer - update based on configuration
-            var interval = TimeSpan.FromSeconds(Settings.UpdateIntervalSeconds);
-            radarTimer = new Timer(UpdateRadarData, null, TimeSpan.Zero, interval);
-            
-            if (Settings.EnableLogging)
-                ModManager.Log($"DerethPulse: Player tracking system online and scanning every {Settings.UpdateIntervalSeconds} seconds");
+            if (Settings.EnableLandblockDataOutput)
+            {
+                Mod.Log("Initializing landblock activity tracking system...");
+
+                var interval = TimeSpan.FromSeconds(Settings.LandblockDataUpdateIntervalSeconds);
+                landblockDataTimer = new Timer(UpdateLandblockData, null, TimeSpan.Zero, interval);
+
+                Mod.Log($"Landblock activity tracking system online and scanning every {interval.TotalSeconds} seconds");
+            }
+            else
+            {
+                landblockDataTimer = null;
+            }
         }
         catch (Exception ex)
         {
-            ModManager.Log($"DerethPulse: ERROR during initialization - {ex.Message}");
+            Mod.Log($"ERROR during initialization - {ex.Message}", ModManager.LogLevel.Error);
         }
-        
-        return Task.CompletedTask;
+    }
+
+    protected override void SettingsChanged(object? sender, EventArgs e)
+    {
+        base.SettingsChanged(sender, e);
+        Settings = SettingsContainer?.Settings ?? new();
+        StartServices();
     }
 
     public override void Stop()
     {
         base.Stop();
         
-        radarTimer?.Dispose();
-        if (Settings?.EnableLogging == true)
-            ModManager.Log("DerethPulse: Player tracking system stopped");
+        playerDataTimer?.Dispose();
+
+        landblockDataTimer?.Dispose();
+
+        Mod.Log("Player and Landblock activity tracking system stopped");
     }
 
-    private string GetJsonFilePath()
+    private string GetJsonFilePath(string outputPath, string outputFileName)
     {
-        // Use the configured output path from settings
-        var outputPath = Settings?.OutputPath ?? "DerethMaps-master";
-        var outputFileName = Settings?.OutputFileName ?? "dynamicPlayers.json";
-        
         // Determine if the path is absolute or relative
         string fullPath;
         if (Path.IsPathRooted(outputPath))
@@ -66,42 +104,42 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             var aceServerDir = Directory.GetCurrentDirectory();
             fullPath = Path.Combine(aceServerDir, outputPath, outputFileName);
         }
-        
+
         // Check if directory exists
         var directory = Path.GetDirectoryName(fullPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
-            ModManager.Log($"DerethPulse: ERROR - Output directory does not exist: {directory}");
-            ModManager.Log($"DerethPulse: Please update your Settings.json to use an existing path");
+            Mod.Log($"ERROR - Output directory does not exist: {directory}", ModManager.LogLevel.Error);
+            Mod.Log($"Please update your Settings.json to use an existing path", ModManager.LogLevel.Error);
             return string.Empty; // Return empty string to indicate error
         }
-        
+
         return fullPath;
     }
 
-    private void UpdateRadarData(object? state)
+    private void UpdatePlayerData(object? state)
     {
         try
         {
             if (Settings == null)
             {
-                ModManager.Log("DerethPulse: ERROR - Settings not available for player tracking update");
+                Mod.Log("ERROR - Settings not available for player activity update", ModManager.LogLevel.Error);
                 return;
             }
 
             var players = PlayerManager.GetAllOnline();
             if (Settings.EnableLogging)
-                ModManager.Log($"DerethPulse: Player scan detected {players.Count} active targets");
+                Mod.Log($"Player scan detected {players.Count} online player{(players.Count > 1 || players.Count == 0 ? "s" : "")}");
 
-            var playerData = new List<PlayerRadarData>();
+            var playerData = new List<PlayerData>();
             var playerCount = 0;
 
             foreach (var player in players)
             {
-                if (playerCount >= Settings.MaxPlayersToTrack)
+                if (playerCount >= Settings.PlayerDataMaxPlayersToOutput)
                 {
                     if (Settings.EnableLogging)
-                        ModManager.Log($"DerethPulse: Reached maximum player limit ({Settings.MaxPlayersToTrack}), skipping remaining players");
+                        Mod.Log($"Reached maximum player limit ({Settings.PlayerDataMaxPlayersToOutput}), skipping remaining players");
                     break;
                 }
 
@@ -113,16 +151,22 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                 }
             }
 
-            ExportToJson(playerData);
+            if (Settings.EnableLogging)
+            {
+                var dungeonPlayers = players.Count - playerData.Count;
+                Mod.Log($"Player scan detected {dungeonPlayers} player{(dungeonPlayers > 1 || dungeonPlayers == 0 ? "s" : "")} indoors or in dungeons and skipped them");
+            }
+
+            ExportToJson(GetJsonFilePath(Settings.PlayerDataOutputPath, Settings.PlayerDataOutputFileName), "player", playerData);
         }
         catch (Exception ex)
         {
             if (Settings?.EnableLogging == true)
-                ModManager.Log($"DerethPulse: Error during player scan - {ex.Message}");
+                Mod.Log($"Error during player scan - {ex.Message}", ModManager.LogLevel.Warn);
         }
     }
 
-    private PlayerRadarData? ExtractPlayerData(Player player)
+    private PlayerData? ExtractPlayerData(Player player)
     {
         try
         {
@@ -164,90 +208,129 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             var x = mapCoords.Value.X >= 0 ? $"{mapCoords.Value.X:F1}E" : $"{Math.Abs(mapCoords.Value.X):F1}W";
             var y = mapCoords.Value.Y >= 0 ? $"{mapCoords.Value.Y:F1}N" : $"{Math.Abs(mapCoords.Value.Y):F1}S";
 
-            return new PlayerRadarData
+            // Get LOC data for better precision
+            var loc = player.Location.ToLOCString();
+
+            return new PlayerData
             {
-                Type = "Player",
+                //Type = "Player",
                 LocationName = playerName,
                 Race = race,
                 Level = level,
                 X = x,
-                Y = y
+                Y = y,
+                LOC = loc
             };
         }
         catch (Exception ex)
         {
             if (Settings?.EnableLogging == true)
-                ModManager.Log($"DerethPulse: Error extracting data for player {player.Name} - {ex.Message}");
+                Mod.Log($"Error extracting data for player {player.Name} - {ex.Message}", ModManager.LogLevel.Warn);
             return null;
         }
     }
 
-    private void ExportToJson(List<PlayerRadarData> playerData)
+    private void UpdateLandblockData(object? state)
+    {
+        try
+        {
+            if (Settings == null)
+            {
+                Mod.Log("ERROR - Settings not available for landblock activity update", ModManager.LogLevel.Error);
+                return;
+            }
+
+            var landblocks = LandblockManager.GetLoadedLandblocks();
+            if (Settings.EnableLogging)
+                Mod.Log($"Landblock scan detected {landblocks.Count} loaded landblock{(landblocks.Count > 1 || landblocks.Count == 0 ? "s" : "")}");
+
+            var landblockData = new List<LandblockData>();
+
+            foreach (var landblock in landblocks)
+            {
+                var radarData = ExtractLandblockData(landblock);
+                if (radarData != null)
+                {
+                    landblockData.Add(radarData);
+                }
+            }
+
+            ExportToJson(GetJsonFilePath(Settings.LandblockDataOutputPath, Settings.LandblockDataOutputFileName), "landblock", landblockData);
+        }
+        catch (Exception ex)
+        {
+            if (Settings?.EnableLogging == true)
+                Mod.Log($"Error during landblock scan - {ex.Message}", ModManager.LogLevel.Warn);
+        }
+    }
+
+    private LandblockData? ExtractLandblockData(Landblock landblock)
+    {
+        try
+        {
+            // Get landblock id
+            var id = "0x" + landblock.Id.ToString()[0..4];
+
+            // Get landblock status
+            var status = "Active";
+            if (landblock.Permaload)
+                status = "Permaload";
+            else if (landblock.IsDormant)
+                status = "Dormant";
+
+            // Get Landblock X / Y
+            var x = landblock.Id.LandblockX.ToString("x2");
+            var y = landblock.Id.LandblockY.ToString("x2");
+
+            // Get Landblock dungeon status
+            var isDungeon = landblock.IsDungeon;
+            var hasDungeon = landblock.HasDungeon;
+
+            // Get Landblock Player and Creature counts
+            var playerCount = landblock.GetPlayers().Count;
+            var creatureCount = landblock.GetCreatures().Count;
+
+            return new LandblockData
+            {
+                Id = id,
+                Status = status,
+                X = x,
+                Y = y,
+                IsDungeon = isDungeon,
+                HasDungeon = hasDungeon,
+                PlayerCount = playerCount,
+                CreatureCount = creatureCount,
+            };
+        }
+        catch (Exception ex)
+        {
+            if (Settings?.EnableLogging == true)
+                Mod.Log($"Error extracting data for landblock {landblock.Id} - {ex.Message}", ModManager.LogLevel.Warn);
+            return null;
+        }
+    }
+
+    private void ExportToJson<T>(string jsonFilePath, string type, List<T> data)
     {
         try
         {
             // Check if we have a valid file path
             if (string.IsNullOrEmpty(jsonFilePath))
             {
-                ModManager.Log("DerethPulse: ERROR - Cannot export data: Invalid output path configured");
+                Mod.Log("ERROR - Cannot export data: Invalid output path configured", ModManager.LogLevel.Error);
                 return;
             }
 
-            var jsonString = JsonSerializer.Serialize(playerData, new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var jsonString = JsonSerializer.Serialize(data, jsonSerializerOptions);
 
             File.WriteAllText(jsonFilePath, jsonString);
             if (Settings?.EnableLogging == true)
-                ModManager.Log($"DerethPulse: Exported {playerData.Count} player positions to DerethMaps at: {jsonFilePath}");
+                Mod.Log($"Exported {data.Count} {type}{(data.Count > 1 || data.Count == 0 ? "s" : "")} activity data to {jsonFilePath}");
         }
         catch (Exception ex)
         {
             if (Settings?.EnableLogging == true)
-                ModManager.Log($"DerethPulse: Error exporting player data - {ex.Message}");
+                Mod.Log($"Error exporting {type} data - {ex.Message}", ModManager.LogLevel.Error);
         }
     }
 }
-
-public class PlayerRadarData
-{
-    [JsonPropertyName("Type")]
-    public string Type { get; set; } = "";
-
-    [JsonPropertyName("LocationName")]
-    public string LocationName { get; set; } = "";
-
-    [JsonPropertyName("Race")]
-    public string Race { get; set; } = "";
-
-    [JsonPropertyName("Level")]
-    public string Level { get; set; } = "";
-
-    [JsonPropertyName("x")]
-    public string X { get; set; } = "";
-
-    [JsonPropertyName("y")]
-    public string Y { get; set; } = "";
-}
-
-public class Settings
-{
-    [JsonPropertyName("updateIntervalSeconds")]
-    public int UpdateIntervalSeconds { get; set; } = 10;
-
-    [JsonPropertyName("outputFileName")]
-    public string OutputFileName { get; set; } = "dynamicPlayers.json";
-
-    [JsonPropertyName("enableLogging")]
-    public bool EnableLogging { get; set; } = false;
-
-
-
-    [JsonPropertyName("maxPlayersToTrack")]
-    public int MaxPlayersToTrack { get; set; } = 100;
-
-    [JsonPropertyName("outputPath")]
-    public string OutputPath { get; set; } = "DerethMaps-master";
-} 
