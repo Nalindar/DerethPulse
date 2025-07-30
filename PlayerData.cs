@@ -1,5 +1,4 @@
-﻿using System;
-namespace DerethPulse
+﻿namespace DerethPulse
 {
     public class PlayerData
     {
