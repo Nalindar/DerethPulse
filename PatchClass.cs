@@ -136,7 +136,7 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
 
             foreach (var player in players)
             {
-                if (playerCount >= Settings.PlayerDataMaxPlayersToOutput)
+                if (Settings.PlayerDataMaxPlayersToOutput != -1 && playerCount >= Settings.PlayerDataMaxPlayersToOutput)
                 {
                     if (Settings.EnableLogging)
                         Mod.Log($"Reached maximum player limit ({Settings.PlayerDataMaxPlayersToOutput}), skipping remaining players");
