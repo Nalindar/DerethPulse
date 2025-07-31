@@ -14,7 +14,8 @@ public class Settings
     public bool EnablePlayerDataOutput { get; set; } = true;
 
     /// <summary>
-    /// The maximum number of players to output player data for
+    /// The maximum number of players to include in output per each update
+    /// <para>Use -1 to have no limit</para>
     /// </summary>
     public int PlayerDataMaxPlayersToOutput { get; set; } = 100;
 
